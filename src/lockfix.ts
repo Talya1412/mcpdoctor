@@ -1,7 +1,7 @@
 // mcpdoctor — lockfix: pin resolved versions.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolvePackageRef } from "./config.js";
+import { isAuditableRef, resolvePackageRef } from "./config.js";
 import type { McpServerEntry, PackageRef, RegistryMeta } from "./types.js";
 
 export interface LockPin {
@@ -25,8 +25,8 @@ export function computeLockfix(
   const pins: Array<{ name: string; serverName: string; oldSpec: string; pinnedSpec: string }> = [];
   for (const e of entries) {
     const ref: PackageRef | null = resolvePackageRef(e);
-    if (!ref) continue;
-    const meta = metas.get(ref.name);
+    if (!isAuditableRef(ref)) continue;
+    const meta = metas.get(ref.key);
     const resolved = meta?.resolvedVersion;
     if (!resolved) continue;
     pins.push({

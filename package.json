@@ -1,6 +1,6 @@
 {
   "name": "mcpdoctor-audit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "npm audit for your MCP server stack. Scan MCP configs, find stale/zombie/insecure servers, pin versions, monitor uptime.",
   "type": "module",
   "bin": {

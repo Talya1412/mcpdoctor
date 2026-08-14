@@ -37,6 +37,8 @@ export interface PackageRef {
   name: string;
   /** specifier: "name" | "name@range" | "name@version" */
   spec: string;
+  /** unique key across refs — spec for distinct ranges so same-name-different-spec resolves independently */
+  key: string;
   /** pre-parsed version/range, or '*' for latest */
   range: string;
   /** null if the command isn't a package manager invocation */

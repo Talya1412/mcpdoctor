@@ -4,13 +4,15 @@ import { resolvePackageRef } from "./config.js";
 import type { BomItem, BomReport, McpServerEntry, McpRuntime, PackageRef, RegistryMeta } from "./types.js";
 
 function installFor(ref: PackageRef | null, meta: RegistryMeta | null): string | null {
-  if (!ref) return null;
-  if (!ref.runtime) return null;
+  if (!ref || !ref.runtime) return null;
   const r: McpRuntime = ref.runtime;
-  const base = r === "uvx" ? "uvx" : r === "python" ? "python -m" : r === "binary" ? ref.name : "npx";
-  const pinned = meta?.resolvedVersion ? `${ref.name}@${meta.resolvedVersion}` : ref.name;
-  if (r === "binary") return `${pinned} (binary)`;
-  return `${base} ${pinned}`;
+  // Only npm-installable runtimes get an `@version` suffix; python modules and
+  // PyPI tools (uvx) install by name only.
+  const pinned = r === "npx" && meta?.resolvedVersion ? `${ref.name}@${meta.resolvedVersion}` : ref.name;
+  if (r === "binary") return `${ref.name} (binary)`;
+  if (r === "python") return `python -m ${pinned}`;
+  if (r === "uvx") return `uvx ${pinned}`;
+  return `npx ${pinned}`;
 }
 
 /** Build a bill-of-materials from entries + fetched registry metadata. */
@@ -26,7 +28,7 @@ export function buildBom(
       sourceFiles.push(e.sourceFile);
     }
     const ref = resolvePackageRef(e);
-    const meta = ref ? metas.get(ref.name) ?? null : null;
+    const meta = ref ? metas.get(ref.key) ?? null : null;
     const resolvedVersion = meta?.resolvedVersion ?? null;
     return {
       serverName: e.name,

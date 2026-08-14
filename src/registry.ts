@@ -1,6 +1,6 @@
 // mcpdoctor — npm registry metadata + minimal semver range matching (no deps).
 
-import { getJson, pool } from "./net.js";
+import { getJson, HttpError, pool } from "./net.js";
 import type { PackageRef, RegistryMeta, VersionMeta } from "./types.js";
 
 const REGISTRY_URL = "https://registry.npmjs.org";
@@ -17,8 +17,6 @@ interface RegistryDoc {
 interface DownloadsDoc {
   downloads?: number;
 }
-
-const META_CACHE = new Map<string, Promise<RegistryMeta | null>>();
 
 export interface RegistryMetaFn {
   (pkg: PackageRef): Promise<RegistryMeta | null>;
@@ -47,86 +45,173 @@ function cmp(a: Numbers | null, b: Numbers | null): number {
   return 0;
 }
 
-function isPlainVersion(s: string): boolean {
+export function isPlainVersion(s: string): boolean {
   return VERSION_RE.test(s.trim()) && !s.trim().startsWith("v ") && !s.includes("*");
 }
 
-interface Bound {
-  op: ">=" | "<" | "=";
-  ver: string;
+/** Parse a possibly-partial version ("1", "1.2", "1.2.3", "1.x") into components. */
+function parsePartial(v: string): { nums: Numbers; has: [boolean, boolean, boolean] } | null {
+  const t = v.trim();
+  if (t === "" || t === "x" || t === "X" || t === "*") return null;
+  const segs = t.split(".");
+  if (segs.length > 3) return null;
+  const nums: Numbers = [0, 0, 0];
+  const has: [boolean, boolean, boolean] = [false, false, false];
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i]!;
+    if (/^[xX*]$/.test(s)) {
+      has[i] = false;
+      continue;
+    }
+    if (!/^\d+$/.test(s)) return null;
+    nums[i] = Number(s);
+    has[i] = true;
+  }
+  return { nums, has };
 }
 
-function parseToken(token: string): Bound | null {
+type Op = ">=" | ">" | "<" | "<=" | "=";
+interface Comparator {
+  op: Op;
+  ver: Numbers;
+}
+
+const join = (n: Numbers): string => `${n[0]}.${n[1]}.${n[2]}`;
+
+/** Expand a single range token into comparators. */
+function expandToken(token: string): Comparator[] {
   const t = token.trim();
+  if (t === "" || t === "*") return [];
+  let op: Op | null = null;
+  let rest = t;
   if (t.startsWith(">=")) {
-    const v = t.slice(2).trim();
-    return parseVersion(v) ? { op: ">=", ver: v } : null;
+    op = ">=";
+    rest = t.slice(2);
+  } else if (t.startsWith("<=")) {
+    op = "<=";
+    rest = t.slice(2);
+  } else if (t.startsWith(">")) {
+    op = ">";
+    rest = t.slice(1);
+  } else if (t.startsWith("<")) {
+    op = "<";
+    rest = t.slice(1);
+  } else if (t.startsWith("=")) {
+    op = "=";
+    rest = t.slice(1);
   }
-  if (t.startsWith("<=")) {
-    const v = t.slice(2).trim();
-    return parseVersion(v) ? { op: "<", ver: v } : null;
+
+  if (op !== null) {
+    const p = parseVersion(rest);
+    if (!p) return [];
+    return [{ op, ver: p }];
   }
-  if (t.startsWith("<")) {
-    const v = t.slice(1).trim();
-    return parseVersion(v) ? { op: "<", ver: v } : null;
+
+  // caret / tilde
+  if (t.startsWith("^")) {
+    const p = parsePartial(t.slice(1));
+    if (!p) return [];
+    return caretComparators(p);
   }
-  if (t.startsWith(">")) {
-    const v = t.slice(1).trim();
-    return parseVersion(v) ? { op: ">=", ver: v } : null;
+  if (t.startsWith("~")) {
+    const p = parsePartial(t.slice(1));
+    if (!p) return [];
+    return tildeComparators(p);
   }
-  if (t.startsWith("^") || t.startsWith("~")) {
-    const v = t.slice(1).trim();
-    return parseVersion(v) ? { op: ">=", ver: v } : null;
+
+  // x-style short range: 1, 1.2, 1.x, 1.2.x
+  const p = parsePartial(t);
+  if (!p) return [];
+  if (p.has[0] && p.has[1] && p.has[2]) {
+    return [{ op: "=", ver: p.nums }];
   }
-  if (VERSION_RE.test(t)) return { op: "=", ver: t };
-  return null;
+  return shortComparators(p);
 }
 
-function maxCeiling(range: string): string | null {
-  for (const t of range.split(/\s+/)) {
-    const trimmed = t.trim();
-    const m = /^~(\d+)\.(\d+)\.(\d+)($|-)/.exec(trimmed);
-    if (m && m[1] !== undefined && m[2] !== undefined) {
-      return `${m[1]}.${Number(m[2]) + 1}.0`;
-    }
-    const c = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(trimmed);
-    if (c && c[1] !== undefined && c[2] !== undefined) {
-      if (Number(c[1]) === 0) return `0.${Number(c[2]) + 1}.0`;
-      return `${Number(c[1]) + 1}.0.0`;
-    }
+/** ^x.y.z → [>=x.y.z, <upper]. upper per caret rules incl ^0. */
+function caretComparators(p: { nums: Numbers; has: [boolean, boolean, boolean] }): Comparator[] {
+  const [major, minor, patch] = p.nums;
+  const lower: Numbers = p.nums;
+  let upper: Numbers;
+  if (major !== 0) {
+    upper = [major + 1, 0, 0];
+  } else {
+    // major === 0: ^0.x stays within minor, ^0.0.x within patch
+    if (minor !== 0) upper = [0, minor + 1, 0];
+    else if (patch !== 0) upper = [0, 0, patch + 1];
+    else if (p.has[1]) upper = [0, 1, 0];
+    else upper = [1, 0, 0];
   }
-  return null;
+  return [
+    { op: ">=", ver: lower },
+    { op: "<", ver: upper },
+  ];
 }
 
-/** Minimal semver `satisfies(version, range)`. Supports ^, ~, >=, >=x <y, exact, *. */
+/** ~x.y.z → [>=x.y.z, <x.(y+1).0]. ~1 → [>=1.0.0, <2.0.0]. */
+function tildeComparators(p: { nums: Numbers; has: [boolean, boolean, boolean] }): Comparator[] {
+  const [major, minor] = p.nums;
+  const lower: Numbers = p.nums;
+  let upper: Numbers;
+  if (p.has[1]) upper = [major, minor + 1, 0];
+  else upper = [major + 1, 0, 0];
+  return [
+    { op: ">=", ver: lower },
+    { op: "<", ver: upper },
+  ];
+}
+
+/** Short / x ranges: 1 → <2.0.0; 1.2 or 1.2.x → <1.3.0. */
+function shortComparators(p: { nums: Numbers; has: [boolean, boolean, boolean] }): Comparator[] {
+  const [major, minor] = p.nums;
+  const lower: Numbers = p.nums;
+  let upper: Numbers;
+  if (p.has[1]) upper = [major, minor + 1, 0];
+  else upper = [major + 1, 0, 0];
+  return [
+    { op: ">=", ver: lower },
+    { op: "<", ver: upper },
+  ];
+}
+
+/**
+ * Minimal semver `satisfies(version, range)`. Supports ^ ~ >= > <= < = exact,
+ * x/short ranges (1, 1.2, 1.x), combined (">=1.0.0 <2.0.0") and `||`.
+ */
 export function satisfies(version: string, range: string): boolean {
   const v = parseVersion(version);
   if (!v) return false;
   const r = range.trim();
   if (r === "" || r === "*") return true;
 
-  const ceiling = maxCeiling(r);
-  if (ceiling && cmp(v, parseVersion(ceiling)) >= 0) return false;
+  // OR groups: any group satisfying the version wins.
+  for (const group of r.split("||")) {
+    if (satisfiesGroup(v, group)) return true;
+  }
+  return false;
+}
 
-  let lowerMet = false;
-  let anyTok = false;
-  for (const token of r.split(/\s+/)) {
-    const t = token.trim();
-    if (t === "" || t === "*") continue;
-    anyTok = true;
-    const bound = parseToken(t);
-    if (!bound) return false;
-    const bv = parseVersion(bound.ver)!;
-    if (bound.op === "=") {
-      if (cmp(v, bv) !== 0) return false;
-      lowerMet = true;
-    } else if (bound.op === "<") {
-      if (t.startsWith("<=") ? cmp(v, bv) > 0 : cmp(v, bv) >= 0) return false;
-    } else {
-      if (cmp(v, bv) >= 0) lowerMet = true;
+function satisfiesGroup(v: Numbers, group: string): boolean {
+  const comparators: Comparator[] = [];
+  for (const token of group.split(/\s+/)) {
+    comparators.push(...expandToken(token));
+  }
+  if (comparators.length === 0) return true;
+  for (const c of comparators) {
+    const d = cmp(v, c.ver);
+    if (c.op === ">=") {
+      if (d < 0) return false;
+    } else if (c.op === ">") {
+      if (d <= 0) return false;
+    } else if (c.op === "<") {
+      if (d >= 0) return false;
+    } else if (c.op === "<=") {
+      if (d > 0) return false;
+    } else if (c.op === "=") {
+      if (d !== 0) return false;
     }
   }
-  return !anyTok || lowerMet;
+  return true;
 }
 
 /** Highest version in `versions` satisfying `range`, if any. */
@@ -147,7 +232,8 @@ function bestMatch(versions: string[], range: string): string | null {
 
 /**
  * Resolve a concrete version for `range` given registry metadata.
- * Pure; unit-tested.
+ * Pure; unit-tested. Returns exact-for-exact when present, best match for
+ * ranges, or latest as a fallback for unpublished/phantom versions.
  */
 export function getResolvedVersion(
   meta: Pick<RegistryMeta, "versions" | "latestVersion">,
@@ -168,30 +254,36 @@ export function getResolvedVersion(
 // Registry network access
 // ---------------------------------------------------------------------------
 
-const GLOBAL_META_CACHE = new Map<string, RegistryMeta | null>();
+const META_CACHE = new Map<string, RegistryMeta | null>();
 
+/**
+ * Fetch registry metadata ONCE per package name (cached). Does NOT depend on
+ * the requested range — version resolution is applied per-call later so
+ * multiple ranges of the same package resolve independently.
+ */
 async function fetchRawMeta(name: string): Promise<RegistryMeta | null> {
-  const cached = GLOBAL_META_CACHE.get(name);
+  const cached = META_CACHE.get(name);
   if (cached !== undefined) return cached;
-  const url = `${REGISTRY_URL}/${encodeURIComponent(name)}`;
+
+  const escaped = name.startsWith("@") ? name.replace("/", "%2f") : name;
+  const url = `${REGISTRY_URL}/${escaped}`;
   let doc: RegistryDoc | null = null;
   try {
     doc = await getJson<RegistryDoc | null>(url);
   } catch (err) {
-    // 404 → null
-    if (err instanceof Error && /404/.test(err.message)) {
-      GLOBAL_META_CACHE.set(name, null);
-      return null;
+    // Only an explicit 404 proves the package doesn't exist; transient
+    // network errors must not poison the cache (monitor is long-lived).
+    if (err instanceof HttpError && err.status === 404) {
+      META_CACHE.set(name, null);
     }
-    GLOBAL_META_CACHE.set(name, null);
     return null;
   }
   if (!doc || typeof doc !== "object") {
-    GLOBAL_META_CACHE.set(name, null);
+    META_CACHE.set(name, null);
     return null;
   }
   const meta = buildMeta(name, doc);
-  GLOBAL_META_CACHE.set(name, meta);
+  META_CACHE.set(name, meta);
   return meta;
 }
 
@@ -228,33 +320,30 @@ export function buildMeta(name: string, doc: RegistryDoc): RegistryMeta | null {
 }
 
 /**
- * Fetch full metadata for one package. Returns null when not found.
- * Adds downloads where possible.
+ * Fetch metadata for one package, resolving the concrete version for THIS
+ * package's range. Range-independent metadata is cached by name; the
+ * resolvedVersion/versionExists fields are computed per call (pure, not cached).
  */
 export async function fetchRegistryMeta(pkg: PackageRef): Promise<RegistryMeta | null> {
-  const cacheKey = pkg.name;
-  if (META_CACHE.has(cacheKey)) return META_CACHE.get(cacheKey)!;
-  const p = (async (): Promise<RegistryMeta | null> => {
-    const meta = await fetchRawMeta(pkg.name);
-    if (!meta) return null;
-    const resolvedVersion = getResolvedVersion(meta, pkg.range);
-    const versionExists = pkg.range !== "*" && meta.versions.some((v) => v.version === pkg.range);
-    // downloads
+  const meta = await fetchRawMeta(pkg.name);
+  if (!meta) return null;
+  const resolvedVersion = getResolvedVersion(meta, pkg.range);
+  const versionExists = meta.versions.some((v) => v.version === pkg.range);
+  // downloads (non-fatal, best-effort) — attach to raw cached meta once.
+  if (meta.downloadsLast30d === null) {
     try {
-      const dl = await getJson<DownloadsDoc | null>(`${DOWNLOADS_URL}/${encodeURIComponent(pkg.name)}`);
+      const dl = await getJson<DownloadsDoc | null>(
+        `${DOWNLOADS_URL}/${encodeURIComponent(pkg.name)}`
+      );
       if (dl && typeof dl.downloads === "number") meta.downloadsLast30d = dl.downloads;
     } catch {
       // non-fatal
     }
-    meta.resolvedVersion = resolvedVersion;
-    meta.versionExists = versionExists;
-    return meta;
-  })();
-  META_CACHE.set(cacheKey, p);
-  return p;
+  }
+  return { ...meta, resolvedVersion, versionExists };
 }
 
-/** Fetch metadata for many packages, bounded concurrency. */
+/** Fetch metadata for many packages, bounded concurrency, keyed by spec. */
 export async function fetchAllMetas(
   pkgs: PackageRef[],
   metaFn: RegistryMetaFn = fetchRegistryMeta
@@ -262,7 +351,7 @@ export async function fetchAllMetas(
   const out = new Map<string, RegistryMeta>();
   const results = await pool(pkgs, async (p) => ({ p, m: await metaFn(p) }), 8);
   for (const { p, m } of results) {
-    if (m) out.set(p.name, m);
+    if (m) out.set(p.key, m);
   }
   return out;
 }

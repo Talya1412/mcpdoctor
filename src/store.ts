@@ -22,7 +22,7 @@ interface SqliteDatabase {
   close(): void;
 }
 
-let DatabaseSyncCtor: (() => new (path: string) => SqliteDatabase) | null = null;
+let DatabaseSyncCtor: (() => new (path: string, options?: { timeout?: number }) => SqliteDatabase) | null = null;
 try {
   // node:sqlite available in Node 22.5+
   const mod = await import("node:sqlite");
@@ -84,7 +84,10 @@ function makeMemoryStore(): UptimeStore {
 
 function makeSqliteStore(dbPath: string): UptimeStore {
   if (!DatabaseSyncCtor) throw new Error("node:sqlite unavailable");
-  const db = new (DatabaseSyncCtor())(dbPath);
+  const db = new (DatabaseSyncCtor())(dbPath, { timeout: 5000 });
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000");
+  db.exec("PRAGMA synchronous = NORMAL");
   db.exec(
     `CREATE TABLE IF NOT EXISTS probes(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,35 +99,35 @@ function makeSqliteStore(dbPath: string): UptimeStore {
   );
   const ins = db.prepare("INSERT INTO probes(target, url, ok, detail, probed_at) VALUES (?, ?, ?, ?, ?)");
   const agg = db.prepare(
-    "SELECT target, SUM(ok) success, COUNT(*) total, MAX(probed_at) last FROM probes GROUP BY target"
+    `SELECT target, SUM(ok) success, COUNT(*) total,
+       (SELECT url FROM probes p2 WHERE p2.target = probes.target ORDER BY id DESC LIMIT 1) url,
+       (SELECT ok FROM probes p2 WHERE p2.target = probes.target ORDER BY id DESC LIMIT 1) last_ok,
+       (SELECT probed_at FROM probes p2 WHERE p2.target = probes.target ORDER BY id ASC LIMIT 1) first_at
+     FROM probes GROUP BY target`
   );
-  const latest = db.prepare("SELECT ok FROM probes WHERE target = ? ORDER BY id DESC LIMIT 1");
-  const first = db.prepare("SELECT probed_at FROM probes WHERE target = ? ORDER BY id ASC LIMIT 1");
   return {
     insertProbe(r) {
       ins.run(r.targetName, r.url ?? null, r.ok, r.detail, r.probedAt);
     },
-    aggTargets(_limit = 1000) {
+    aggTargets(limit = 1000) {
       const rows = agg.all() as Array<Record<string, unknown>>;
       const out: UptimeAggregate[] = rows.map((row) => {
         const target = String(row["target"] ?? "");
         const total = Number(row["total"] ?? 0);
         const success = Number(row["success"] ?? 0);
-        const lastRow = latest.all(target);
-        const firstRow = first.all(target);
-        const lastOk = lastRow.length > 0 ? Number(lastRow[0]?.["ok"]) : null;
+        const lastOk = row["last_ok"] === null || row["last_ok"] === undefined ? null : Number(row["last_ok"]);
         const currentStatus = lastOk === 1 ? "up" : lastOk === 0 ? "down" : "unknown";
         return {
           targetName: target,
-          url: null,
+          url: row["url"] === null || row["url"] === undefined ? null : String(row["url"]),
           currentStatus,
           availabilityPct: total === 0 ? 0 : Math.round((success / total) * 1000) / 10,
           totalProbes: total,
           successProbes: success,
-          lastChangedAt: firstRow.length > 0 ? String(firstRow[0]?.["probed_at"] ?? "") : null,
+          lastChangedAt: row["first_at"] === null || row["first_at"] === undefined ? null : String(row["first_at"]),
         };
       });
-      return out;
+      return out.slice(0, limit);
     },
     close() {
       db.close();
@@ -140,6 +143,7 @@ export function openStore(dbPath = "mcpdoctor.db"): UptimeStore {
   try {
     return makeSqliteStore(dbPath);
   } catch {
+    console.warn("[mcpdoctor] node:sqlite unavailable — uptime history will not persist across runs (Node 22.5+ recommended)");
     return makeMemoryStore();
   }
 }

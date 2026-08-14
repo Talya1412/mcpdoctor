@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import { runAudit } from "./audit.js";
 import { buildBom } from "./bom.js";
-import { gatherEntries, parseMcpConfig, resolvePackageRef } from "./config.js";
+import { gatherEntries, isAuditableRef, parseMcpConfig, resolvePackageRef } from "./config.js";
 import { computeLockfix, writeLockfile } from "./lockfix.js";
 import { runMonitor } from "./monitor.js";
 import { fetchAllMetas } from "./registry.js";
@@ -31,7 +31,7 @@ function loadEntries(config?: string): McpServerEntry[] {
 async function loadMetasFor(entries: McpServerEntry[]) {
   const refs = entries
     .map((e) => resolvePackageRef(e))
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+    .filter(isAuditableRef);
   return fetchAllMetas(refs);
 }
 

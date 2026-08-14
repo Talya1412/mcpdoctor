@@ -4,7 +4,7 @@ import type { HealthResult, PackageVulns, RegistryMeta } from "../src/types.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
-function meta(publishedDaysAgo: number | null): RegistryMeta | null {
+function meta(publishedDaysAgo: number | null, over: Partial<RegistryMeta> = {}): RegistryMeta | null {
   if (publishedDaysAgo === null) return null;
   return {
     name: "pkg",
@@ -15,6 +15,7 @@ function meta(publishedDaysAgo: number | null): RegistryMeta | null {
     deprecated: false,
     versionExists: true,
     resolvedVersion: "1.0.0",
+    ...over,
   };
 }
 
@@ -107,5 +108,42 @@ describe("composeVerdict", () => {
       resolvedVersion: "1.0.0",
     });
     expect(v.verdict).toBe("zombie");
+  });
+
+  it("deprecated package is insecure", () => {
+    const v = composeVerdict({
+      name: "s",
+      registry: meta(5, { deprecated: "use foo" }),
+      staleness: stalenessVerdict(meta(5, { deprecated: "use foo" })),
+      vulns: null,
+      health: HEALTH_OK,
+      resolvedVersion: "1.0.0",
+    });
+    expect(v.verdict).toBe("insecure");
+    expect(v.problems.some((p) => p.message.includes("deprecated"))).toBe(true);
+  });
+
+  it("phantom pin to never-published version is insecure", () => {
+    const reg: RegistryMeta = {
+      name: "pkg",
+      latestPublishAt: new Date().toISOString(),
+      latestVersion: "1.0.0",
+      versions: [{ version: "1.0.0", publishedAt: null, isLatest: true }],
+      downloadsLast30d: null,
+      deprecated: false,
+      versionExists: true,
+      resolvedVersion: "1.0.0",
+    };
+    const v = composeVerdict({
+      name: "s",
+      registry: reg,
+      staleness: { verdict: "ok", reason: "last publish 0 days ago", daysSincePublish: 0 },
+      vulns: null,
+      health: HEALTH_OK,
+      resolvedVersion: "1.0.0",
+      requestedRange: "9.9.9",
+    });
+    expect(v.verdict).toBe("insecure");
+    expect(v.problems.some((p) => p.message.includes("9.9.9"))).toBe(true);
   });
 });

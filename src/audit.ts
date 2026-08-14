@@ -1,6 +1,6 @@
 // mcpdoctor — audit orchestrator.
 
-import { gatherEntries, parseMcpConfig, resolvePackageRef } from "./config.js";
+import { gatherEntries, isAuditableRef, parseMcpConfig, resolvePackageRef } from "./config.js";
 import { probeHealth } from "./health.js";
 import { queryVulns } from "./osv.js";
 import { fetchAllMetas } from "./registry.js";
@@ -41,11 +41,9 @@ function uniqueRefs(entries: McpServerEntry[]): PackageRef[] {
   const out: PackageRef[] = [];
   for (const e of entries) {
     const ref = resolvePackageRef(e);
-    if (!ref) continue;
-    if (ref.runtime === "binary") continue; // bare binaries (git, docker) aren't npm packages
-    const key = ref.spec;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (!isAuditableRef(ref)) continue;
+    if (seen.has(ref.key)) continue;
+    seen.add(ref.key);
     out.push(ref);
   }
   return out;
@@ -74,14 +72,14 @@ export async function runAudit(
   const vulnResults = await pool(
     refs,
     async (ref) => {
-      const meta = metas.get(ref.name);
+      const meta = metas.get(ref.key);
       const resolved = meta?.resolvedVersion ?? null;
       const vulns = noCves ? [] : await queryVulns(ref.name, resolved);
-      return { name: ref.name, resolvedVersion: resolved, vulns };
+      return { key: ref.key, name: ref.name, resolvedVersion: resolved, vulns };
     },
     8
   );
-  const vulnMap = new Map(vulnResults.map((v) => [v.name, v]));
+  const vulnMap = new Map(vulnResults.map((v) => [v.key, v]));
 
   // health per entry
   const healthResults = await pool(entries, probeHealth, 8);
@@ -91,16 +89,18 @@ export async function runAudit(
 
   const verdicts: AuditVerdict[] = entries.map((e, i) => {
     const ref = resolvePackageRef(e);
-    const meta: RegistryMeta | null = ref && ref.runtime !== "binary" ? metas.get(ref.name) ?? null : null;
+    const meta: RegistryMeta | null = isAuditableRef(ref)
+      ? metas.get(ref.key) ?? null
+      : null;
     // A server with NO npm-auditable package is a remote (url) server, a
-    // bare binary (git/docker), or a python/node module — none "missing" on
+    // bare binary (git/docker), or a python/module tool — none "missing" on
     // npm. Report purely on reachability (health).
-    const noPackage = ref === null || ref.runtime === "binary";
+    const noPackage = !isAuditableRef(ref);
     const staleness = noPackage
       ? { verdict: "ok" as const, reason: e.transport === "http" || e.transport === "sse" ? "remote server (no npm package)" : "non-npm command (not auditable)", daysSincePublish: null }
       : stalenessVerdict(meta);
     const resolved = meta?.resolvedVersion ?? null;
-    const vulns = ref ? vulnMap.get(ref.name) ?? null : null;
+    const vulns = ref ? vulnMap.get(ref.key) ?? null : null;
     const health = healthResults[i] ?? { reachable: null, detail: "probe skipped" };
     const verdict = composeVerdict({
       name: e.name,
@@ -109,6 +109,7 @@ export async function runAudit(
       vulns,
       health,
       resolvedVersion: resolved,
+      requestedRange: ref?.range,
     });
 
     if (verdict.verdict === "insecure") {

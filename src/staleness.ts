@@ -52,6 +52,8 @@ export interface ComposeInputs {
   vulns: PackageVulns | null;
   health: HealthResult;
   resolvedVersion: string | null;
+  /** exact pinned version requested, if the user pinned a concrete version */
+  requestedRange?: string;
 }
 
 interface Problem {
@@ -80,16 +82,37 @@ export function composeVerdict(inputs: ComposeInputs): AuditVerdict {
   let hasHigh = false;
   for (const v of criticalVulns) {
     const sev = (v.severity ?? "").toLowerCase();
+    const problemSeverity: Problem["severity"] =
+      sev === "critical" ? "critical" : sev === "high" ? "high" : sev === "medium" ? "medium" : sev === "low" ? "low" : "high";
     problems.push({
-      severity: "high",
+      severity: problemSeverity,
       message: `CVE ${v.id}: ${v.summary || "known vulnerability"} (severity ${v.severity ?? "n/a"})`,
     });
-    if (sev.includes("crit")) hasCritical = true;
-    else if (sev.includes("high") || sev === "") hasHigh = true;
+    if (problemSeverity === "critical") hasCritical = true;
+    else if (problemSeverity === "high") hasHigh = true;
   }
 
   if (inputs.staleness.verdict !== "ok") {
     problems.push({ severity: "medium", message: inputs.staleness.reason });
+  }
+  // Deprecated package = known insecure (README: deprecated-x → INSECURE).
+  if (inputs.registry?.deprecated) {
+    problems.push({
+      severity: "high",
+      message: "package is deprecated (unmaintained / discouraged)",
+    });
+  }
+  // Phantom pin: user pinned an exact version that was never published.
+  if (
+    inputs.registry &&
+    inputs.requestedRange &&
+    /^v?\d+\.\d+\.\d+/.test(inputs.requestedRange) &&
+    !inputs.registry.versions.some((v) => v.version === inputs.requestedRange)
+  ) {
+    problems.push({
+      severity: "high",
+      message: `pinned version ${inputs.requestedRange} was never published (resolved to ${inputs.resolvedVersion ?? "latest"})`,
+    });
   }
   if (inputs.health.reachable === false) {
     problems.push({ severity: "info", message: `unreachable: ${inputs.health.detail}` });

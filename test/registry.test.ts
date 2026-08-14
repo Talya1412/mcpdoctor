@@ -42,6 +42,45 @@ describe("satisfies", () => {
   it("lower bound required", () => {
     expect(satisfies("0.1.0", ">=1.0.0")).toBe(false);
   });
+
+  it("treats > as exclusive (not >=", () => {
+    expect(satisfies("1.2.4", ">1.2.3")).toBe(true);
+    expect(satisfies("1.2.3", ">1.2.3")).toBe(false);
+    expect(satisfies("2.0.0", ">1.0.0")).toBe(true);
+  });
+
+  it("supports short caret ranges", () => {
+    expect(satisfies("1.9.9", "^1")).toBe(true);
+    expect(satisfies("2.0.0", "^1")).toBe(false);
+    expect(satisfies("1.9.9", "^1.2")).toBe(true);
+    expect(satisfies("2.0.0", "^1.2")).toBe(false);
+  });
+
+  it("supports short tilde ranges", () => {
+    expect(satisfies("1.2.9", "~1.2")).toBe(true);
+    expect(satisfies("1.3.0", "~1.2")).toBe(false);
+    expect(satisfies("1.9.9", "~1")).toBe(true);
+    expect(satisfies("2.0.0", "~1")).toBe(false);
+  });
+
+  it("supports x-range / short versions", () => {
+    expect(satisfies("1.5.0", "1.x")).toBe(true);
+    expect(satisfies("2.0.0", "1.x")).toBe(false);
+    expect(satisfies("1.5.0", "1.5.x")).toBe(true);
+    expect(satisfies("1.6.0", "1.5.x")).toBe(false);
+    expect(satisfies("1.5.0", "1.5")).toBe(true);
+  });
+
+  it("supports || alternative ranges", () => {
+    expect(satisfies("1.2.0", "^1.0.0 || ^2.0.0")).toBe(true);
+    expect(satisfies("2.5.0", "^1.0.0 || ^2.0.0")).toBe(true);
+    expect(satisfies("3.0.0", "^1.0.0 || ^2.0.0")).toBe(false);
+  });
+
+  it("supports <= as inclusive", () => {
+    expect(satisfies("1.2.3", "<=1.2.3")).toBe(true);
+    expect(satisfies("1.2.4", "<=1.2.3")).toBe(false);
+  });
 });
 
 describe("getResolvedVersion", () => {

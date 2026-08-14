@@ -22,14 +22,30 @@ function databasePrefix(id: string): string {
 }
 
 function severityOf(v: OsvVuln): string | null {
+  let raw: string | null = null;
   if (v.database_specific && typeof v.database_specific.severity === "string") {
-    return v.database_specific.severity;
+    raw = v.database_specific.severity;
   }
-  if (Array.isArray(v.severity) && v.severity.length > 0) {
+  if (raw === null && Array.isArray(v.severity) && v.severity.length > 0) {
     const s = v.severity[0];
-    if (s && typeof s.score === "string") return s.score;
+    if (s && typeof s.score === "string") raw = s.score;
   }
-  return null;
+  if (raw === null) return null;
+  // Normalize to a canonical severity string: critical/high/medium/low.
+  const lower = raw.toLowerCase();
+  if (lower.includes("critical")) return "critical";
+  if (lower.includes("high")) return "high";
+  if (lower.includes("moderate")) return "medium";
+  if (lower.includes("low")) return "low";
+  // Numeric CVSS: >=9 critical, >=7 high, >=4 medium, else low.
+  const n = Number.parseFloat(raw);
+  if (!Number.isNaN(n)) {
+    if (n >= 9) return "critical";
+    if (n >= 7) return "high";
+    if (n >= 4) return "medium";
+    return "low";
+  }
+  return lower;
 }
 
 /**

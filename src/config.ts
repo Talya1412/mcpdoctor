@@ -10,6 +10,14 @@ import type {
   PackageRef,
 } from "./types.js";
 
+// runtimes whose packages are NOT auditable against npm: bare binaries
+// (git/docker), python modules, and PyPI tools (uvx/pipx).
+export const NON_AUDITABLE = new Set<McpRuntime>(["binary", "python", "uvx"]);
+
+export function isAuditableRef(ref: PackageRef | null): ref is PackageRef {
+  return ref !== null && (ref.runtime === null || !NON_AUDITABLE.has(ref.runtime));
+}
+
 /** Candidate config paths (relative to cwd), in priority order. */
 export function candidatePaths(cwd: string): string[] {
   const rel: Array<[string, string]> = [
@@ -142,31 +150,27 @@ export function parseMcpConfigObject(
 // Package resolution
 // ---------------------------------------------------------------------------
 
-const FLAG_ARGS = new Set([
-  "-y",
-  "--yes",
-  "-p",
-  "--package",
-  "@latest",
-  "--latest",
-  "-c",
-  "--command",
-]);
+const FLAG_ARGS = new Set(["-y", "--yes", "-p", "--package", "@latest", "--latest"]);
 
-/** First non-flag arg, skipping recognized specifier/flag values. */
+// npx -c / --call runs a shell command (e.g. `npx -c "node -v"`); its value is
+// NOT a package spec, so both flag and following value are skipped, not consumed.
+const CALL_FLAGS = new Set(["-c", "--command", "--call"]);
+
+/** First non-flag arg, skipping recognized flag values and shell-call args. */
 function firstPackageArg(args: string[]): string | null {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === undefined) continue;
-    if (a.startsWith("-")) continue;
-    if (FLAG_ARGS.has(a)) {
-      // `-p <pkg>` / `--package <pkg>`: consume the value as the package.
-      if (a === "-p" || a === "--package" || a === "-c" || a === "--command") {
+    if (a.startsWith("-")) {
+      if (a === "-p" || a === "--package") {
         const val = args[i + 1];
         if (val !== undefined) return val;
+      } else if (CALL_FLAGS.has(a)) {
+        i += 1; // skip the following shell-command value
       }
       continue;
     }
+    if (FLAG_ARGS.has(a)) continue;
     return a;
   }
   return null;
@@ -222,7 +226,7 @@ export function resolvePackageRef(entry: McpServerEntry): PackageRef | null {
     const pkg = firstPackageArg(candidateArgs);
     if (!pkg) return null;
     const { name, range, spec } = splitSpec(pkg);
-    return { name, range, spec, runtime: "npx" };
+    return { name, range, spec, key: spec, runtime: "npx" };
   }
 
   // pnpm dlx <pkg> — pnpm subcommand handled above (first non-flag arg).
@@ -232,14 +236,14 @@ export function resolvePackageRef(entry: McpServerEntry): PackageRef | null {
     const pkg = firstPackageArg(args);
     if (!pkg) return null;
     const { name, range, spec } = splitSpec(pkg);
-    return { name, range, spec, runtime: "uvx" };
+    return { name, range, spec, key: spec, runtime: "uvx" };
   }
 
   if (base === "pipx") {
     const pkg = firstPackageArg(args);
     if (!pkg) return null;
     const { name, range, spec } = splitSpec(pkg);
-    return { name, range, spec, runtime: "uvx" };
+    return { name, range, spec, key: spec, runtime: "uvx" };
   }
 
   // python -m <module>
@@ -247,7 +251,7 @@ export function resolvePackageRef(entry: McpServerEntry): PackageRef | null {
     const mIdx = args.findIndex((a) => a === "-m");
     const mod = mIdx !== -1 ? args[mIdx + 1] : undefined;
     if (mod && !mod.startsWith("-")) {
-      return { name: mod, spec: mod, range: "*", runtime: "python" };
+      return { name: mod, spec: mod, key: mod, range: "*", runtime: "python" };
     }
     return null;
   }
@@ -266,7 +270,7 @@ export function resolvePackageRef(entry: McpServerEntry): PackageRef | null {
   }
   // Heuristic: a bare command name with no path separator is a binary.
   if (!base.includes("/") && !base.includes("\\") && !base.includes(" ")) {
-    return { name: base, spec: base, range: "*", runtime: "binary" };
+    return { name: base, spec: base, key: base, range: "*", runtime: "binary" };
   }
 
   return null;

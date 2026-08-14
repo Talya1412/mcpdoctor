@@ -4,14 +4,27 @@ import type { HealthResult, McpServerEntry } from "./types.js";
 
 /**
  * Probe reachability of an MCP server entry. Never throws.
- * http/sse → HEAD request with 5s timeout. stdio → n/a.
+ * http/sse → HEAD request with 5s timeout; falls back to GET when the server
+ * rejects HEAD (405/501 — common for SSE and streamable-HTTP endpoints).
+ * stdio → n/a (spawning would auto-install package-manager deps).
  */
 export async function probeHealth(entry: McpServerEntry): Promise<HealthResult> {
   if ((entry.transport === "http" || entry.transport === "sse") && entry.url) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      const res = await fetch(entry.url, { method: "HEAD", redirect: "follow", signal: controller.signal });
+      let res = await fetch(entry.url, {
+        method: "HEAD",
+        redirect: "follow",
+        signal: controller.signal,
+      });
+      if ((res.status === 405 || res.status === 501) && res.headers.get("allow") === null) {
+        res = await fetch(entry.url, {
+          method: "GET",
+          redirect: "follow",
+          signal: controller.signal,
+        });
+      }
       return { reachable: res.ok, detail: `HTTP ${res.status}` };
     } catch (err) {
       const name = err instanceof Error ? err.name : "UnknownError";

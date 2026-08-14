@@ -11,41 +11,46 @@ function entry(partial: Partial<McpServerEntry>): McpServerEntry {
 describe("resolvePackageRef", () => {
   it("npx -y pkg", () => {
     const r = resolvePackageRef(entry({ command: "npx", args: ["-y", "some-pkg"] }));
-    expect(r).toEqual({ name: "some-pkg", spec: "some-pkg", range: "*", runtime: "npx" });
+    expect(r).toEqual({ name: "some-pkg", spec: "some-pkg", key: "some-pkg", range: "*", runtime: "npx" });
   });
 
   it("bunx pkg@2", () => {
     const r = resolvePackageRef(entry({ command: "bunx", args: ["tool@2.1.0"] }));
-    expect(r).toEqual({ name: "tool", spec: "tool@2.1.0", range: "2.1.0", runtime: "npx" });
+    expect(r).toEqual({ name: "tool", spec: "tool@2.1.0", key: "tool@2.1.0", range: "2.1.0", runtime: "npx" });
   });
 
   it("uvx tool", () => {
     const r = resolvePackageRef(entry({ command: "uvx", args: ["mcp-tool"] }));
-    expect(r).toEqual({ name: "mcp-tool", spec: "mcp-tool", range: "*", runtime: "uvx" });
+    expect(r).toEqual({ name: "mcp-tool", spec: "mcp-tool", key: "mcp-tool", range: "*", runtime: "uvx" });
   });
 
   it("python -m module", () => {
     const r = resolvePackageRef(entry({ command: "python", args: ["-m", "mcp.server"] }));
-    expect(r).toEqual({ name: "mcp.server", spec: "mcp.server", range: "*", runtime: "python" });
+    expect(r).toEqual({ name: "mcp.server", spec: "mcp.server", key: "mcp.server", range: "*", runtime: "python" });
   });
 
   it("git binary", () => {
     const r = resolvePackageRef(entry({ command: "git", args: [] }));
-    expect(r).toEqual({ name: "git", spec: "git", range: "*", runtime: "binary" });
+    expect(r).toEqual({ name: "git", spec: "git", key: "git", range: "*", runtime: "binary" });
   });
 
   it("scoped npx package", () => {
     const r = resolvePackageRef(entry({ command: "npx", args: ["@scope/pkg"] }));
-    expect(r).toEqual({ name: "@scope/pkg", spec: "@scope/pkg", range: "*", runtime: "npx" });
+    expect(r).toEqual({ name: "@scope/pkg", spec: "@scope/pkg", key: "@scope/pkg", range: "*", runtime: "npx" });
   });
 
   it("pnpm dlx pkg", () => {
     const r = resolvePackageRef(entry({ command: "pnpm", args: ["dlx", "server"] }));
-    expect(r).toEqual({ name: "server", spec: "server", range: "*", runtime: "npx" });
+    expect(r).toEqual({ name: "server", spec: "server", key: "server", range: "*", runtime: "npx" });
   });
 
   it("node not a package", () => {
     expect(resolvePackageRef(entry({ command: "node", args: ["server.js"] }))).toBeNull();
+  });
+
+  it("npx -c shell command is not a package", () => {
+    expect(resolvePackageRef(entry({ command: "npx", args: ["-c", "node -v"] }))).toBeNull();
+    expect(resolvePackageRef(entry({ command: "npx", args: ["--call", "node -v"] }))).toBeNull();
   });
 });
 
