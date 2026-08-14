@@ -1,0 +1,48 @@
+{
+  "name": "mcpdoctor",
+  "version": "0.1.0",
+  "description": "npm audit for your MCP server stack. Scan MCP configs, find stale/zombie/insecure servers, pin versions, monitor uptime.",
+  "type": "module",
+  "bin": {
+    "mcpdoctor": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "tsc -p tsconfig.json --noEmit && vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "audit",
+    "security",
+    "cli",
+    "devsecops",
+    "supply-chain",
+    "cve"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
