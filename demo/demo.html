@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mcpdoctor demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 800px at 20% 10%, #1e2233 0%, #0d0f1a 60%, #07080f 100%);
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 48px;
+  }
+  .card {
+    width: 880px; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 1px #ffffff14, 0 30px 80px -20px #000000cc;
+    background: #0b0d16;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 18px; background: #141826;
+    border-bottom: 1px solid #ffffff0d;
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #ff5f56; } .dot.y { background: #ffbd2e; } .dot.g { background: #27c93f; }
+  .title { margin-left: 10px; color: #7a82a6; font-size: 14px; letter-spacing: .02em; }
+  .body { padding: 22px 24px; font-size: 15px; line-height: 1.65; }
+  .prompt { color: #39d98a; }
+  .prompt::after { content: " $ "; color: #9aa3c9; }
+  .caret { display: inline-block; width: 9px; height: 17px; background: #39d98a; vertical-align: text-bottom;
+           animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .cmd { color: #e8ecff; }
+  table { border-collapse: collapse; margin-top: 14px; width: 100%; font-size: 14px; }
+  .spacer { height: 14px; }
+  th, td { text-align: left; padding: 6px 10px; }
+  th { color: #5c6preservea6; color: #5c64a6; font-weight: 600; border-bottom: 2px solid #242a3f; }
+  td { color: #cdd3f0; border-bottom: 1px solid #1b2138; }
+  .mono { color: #8a93bd; }
+  .ok { color: #39d98a; font-weight: 600; }
+  .stale { color: #e6c233; font-weight: 600; }
+  .zombie { color: #ff5f56; font-weight: 600; }
+  .insecure { color: #ff8a5c; font-weight: 700; }
+  .missing { color: #ff5f56; font-weight: 600; }
+  .summary { margin-top: 16px; padding-top: 14px; border-top: 1px dashed #242a3f; color: #8a93bd; font-size: 13px; }
+  .sum b { color: #cdd3f0; }
+  .blind { opacity: 0; }
+  tr.blind td, tr.blind { opacity: 0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="title">mcpdoctor — audit</span>
+    </div>
+    <div class="body">
+      <div><span class="prompt"></span><span class="cmd">mcpdoctor --format table</span></div>
+      <div class="spacer"></div>
+      <div id="typer"></div>
+      <table>
+        <thead>
+          <tr><th>name</th><th>verdict</th><th>version</th><th>reason</th></tr>
+        </thead>
+        <tbody>
+          <tr id="r1" class="blind"><td class="mono">filesystem</td><td class="ok">OK</td><td class="mono">1.2.3</td><td>healthy</td></tr>
+          <tr id="r2" class="blind"><td class="mono">github</td><td class="stale">STALE</td><td class="mono">0.5.0</td><td>last publish 142 days ago</td></tr>
+          <tr id="r3" class="blind"><td class="mono">legacy-tool</td><td class="zombie">ZOMBIE</td><td class="mono">0.1.0</td><td>no publish in 400 days</td></tr>
+          <tr id="r4" class="blind"><td class="mono">deprecated-x</td><td class="insecure">INSECURE</td><td class="mono">1.0.0</td><td>CVE-2025-XXXXX: known vulnerability</td></tr>
+          <tr id="r5" class="blind"><td class="mono">ghost-server</td><td class="missing">MISSING</td><td class="mono">-</td><td>package not found on npm</td></tr>
+          <tr id="r6" class="blind"><td class="mono">remote-api</td><td class="zombie" style="color:#ff5f56">UNREACH</td><td class="mono">-</td><td>HTTP 502</td></tr>
+        </tbody>
+      </table>
+      <div class="summary">
+        <b>6 servers</b> &nbsp;•&nbsp; 1 OK &nbsp;•&nbsp; 1 STALE &nbsp;•&nbsp; 1 ZOMBIE &nbsp;•&nbsp; 1 INSECURE &nbsp;•&nbsp; 1 MISSING &nbsp;•&nbsp; 1 UNREACHABLE —&nbsp;
+        <span class="ok">fix the insecure one first</span>
+      </div>
+    </div>
+  </div>
+  <script>
+    // progressive reveal, driven manually so we can snapshot each frame
+    const rows = ["r1","r2","r3","r4","r5","r6"];
+    let i = 0;
+    window.step = () => {
+      const el = document.getElementById(rows[i]);
+      if (el) { el.classList.remove("blind"); el.style.transition="none"; }
+      i++;
+      return i;
+    };
+    </script>
+</body>
+</html>

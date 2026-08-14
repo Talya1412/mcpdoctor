@@ -7,3 +7,4 @@ dist/
 mcpdoctor.db
 *.lock.db
 coverage/
+.playwright-mcp/

@@ -11,6 +11,8 @@ One command scans your MCP configs, finds **dead, stale, zombie and insecure** s
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 
+![mcpdoctor demo](demo/demo.gif)
+
 </div>
 
 ---
