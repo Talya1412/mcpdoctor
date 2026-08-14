@@ -3,7 +3,7 @@ import { openStore } from "../src/store.js";
 
 describe("openStore", () => {
   it("inserts and aggregates probes", () => {
-    const store = openStore();
+    const store = openStore(":memory:");
     store.insertProbe({ targetName: "a", url: "http://x", ok: 1, detail: "HTTP 200", probedAt: "2024-01-01T00:00:00Z" });
     store.insertProbe({ targetName: "a", url: "http://x", ok: 1, detail: "HTTP 200", probedAt: "2024-01-02T00:00:00Z" });
     store.insertProbe({ targetName: "a", url: "http://x", ok: 0, detail: "timeout", probedAt: "2024-01-03T00:00:00Z" });
@@ -22,7 +22,7 @@ describe("openStore", () => {
   });
 
   it("empty store yields empty aggregates", () => {
-    const store = openStore();
+    const store = openStore(":memory:");
     expect(store.aggTargets()).toEqual([]);
     store.close();
   });
