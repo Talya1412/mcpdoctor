@@ -6,8 +6,8 @@
 
 One command scans your MCP configs, finds **dead, stale, zombie and insecure** servers, pins your versions, and monitors uptime.
 
-[![npm version](https://img.shields.io/npm/v/mcpdoctor.svg)](https://www.npmjs.com/package/mcpdoctor)
-[![npm downloads](https://img.shields.io/npm/dm/mcpdoctor.svg)](https://www.npmjs.com/package/mcpdoctor)
+[![npm version](https://img.shields.io/npm/v/mcpdoctor-audit.svg)](https://www.npmjs.com/package/mcpdoctor-audit)
+[![npm downloads](https://img.shields.io/npm/dm/mcpdoctor-audit.svg)](https://www.npmjs.com/package/mcpdoctor-audit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 
@@ -33,32 +33,32 @@ MCP servers are wired into agents on vibes — no lockfile, no CVE scan, no fres
 Requires Node.js 18+.
 
 ```sh
-npx mcpdoctor          # works out of the box, no global install
+npx mcpdoctor-audit    # works out of the box, no global install
 ```
 
 or install globally:
 
 ```sh
-npm install -g mcpdoctor
+npm install -g mcpdoctor-audit
 ```
 
 ## Quick start
 
 ```sh
 # Audit all detected MCP configs in the current directory
-npx mcpdoctor
+npx mcpdoctor-audit
 
 # Audit a specific config, markdown report
-npx mcpdoctor -c .cursor/mcp.json -f markdown
+npx mcpdoctor-audit -c .cursor/mcp.json -f markdown
 
 # Bill of materials — what versions are you actually running?
-npx mcpdoctor bom --json
+npx mcpdoctor-audit bom --json
 
 # Pin your versions to a lockfile
-npx mcpdoctor lockfix --write
+npx mcpdoctor-audit lockfix --write
 
 # Watch your remote servers' uptime (Ctrl+C to stop)
-npx mcpdoctor monitor
+npx mcpdoctor-audit monitor
 ```
 
 ## Example output
@@ -81,7 +81,7 @@ remote-api     | UNREACHABLE   | -            | HTTP 502
 | `mcpdoctor` / `mcpdoctor audit` | Scan configs, audit each server, print report |
 | `mcpdoctor bom` | Bill of materials — resolved versions + install commands |
 | `mcpdoctor lockfix` | Generate/print a lockfile of pinned server versions |
-| `mcpdoctor monitor` | Continuous uptime monitoring for remote servers |
+| `mcpdoctor-audit monitor` | Continuous uptime monitoring for remote servers |
 | `mcpdoctor -v` | Print version |
 
 ### Options
