@@ -7,15 +7,17 @@ describe("openStore", () => {
     store.insertProbe({ targetName: "a", url: "http://x", ok: 1, detail: "HTTP 200", probedAt: "2024-01-01T00:00:00Z" });
     store.insertProbe({ targetName: "a", url: "http://x", ok: 1, detail: "HTTP 200", probedAt: "2024-01-02T00:00:00Z" });
     store.insertProbe({ targetName: "a", url: "http://x", ok: 0, detail: "timeout", probedAt: "2024-01-03T00:00:00Z" });
+    store.insertProbe({ targetName: "a", url: "http://x", ok: 0, detail: "timeout", probedAt: "2024-01-04T00:00:00Z" });
     store.insertProbe({ targetName: "b", url: null, ok: 0, detail: "n/a", probedAt: "2024-01-01T00:00:00Z" });
 
     const agg = store.aggTargets();
     const a = agg.find((r) => r.targetName === "a");
     expect(a).toBeDefined();
-    expect(a?.totalProbes).toBe(3);
+    expect(a?.totalProbes).toBe(4);
     expect(a?.successProbes).toBe(2);
     expect(a?.currentStatus).toBe("down");
-    expect(a?.availabilityPct).toBeCloseTo(66.7, 1);
+    expect(a?.availabilityPct).toBe(50);
+    expect(a?.lastChangedAt).toBe("2024-01-03T00:00:00Z");
     const b = agg.find((r) => r.targetName === "b");
     expect(b?.currentStatus).toBe("down");
     store.close();

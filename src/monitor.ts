@@ -35,7 +35,7 @@ export function specFor(entry: McpServerEntry): UptimeTargetSpec {
  * Run the monitor loop: probe -> store -> log -> repeat/exit.
  */
 export async function runMonitor(
-  entries: McpServerEntry[],
+  entries: McpServerEntry[] | (() => McpServerEntry[]),
   opts: MonitorOptions = {}
 ): Promise<void> {
   const intervalMs = opts.intervalMs ?? 60_000;
@@ -51,8 +51,9 @@ export async function runMonitor(
 
   try {
     for await (const _tick of ticker(intervalMs)) {
-      const specs = entries.map(specFor);
-      const healths = await Promise.all(entries.map(probeHealth));
+      const currentEntries = typeof entries === "function" ? entries() : entries;
+      const specs = currentEntries.map(specFor);
+      const healths = await Promise.all(currentEntries.map(probeHealth));
       for (let i = 0; i < healths.length; i++) {
         const h = healths[i];
         const spec = specs[i];

@@ -62,10 +62,16 @@ function makeMemoryStore(): UptimeStore {
       }
       const out: UptimeAggregate[] = [];
       for (const [target, arr] of byTarget) {
-        const sorted = [...arr].sort((a, b) => a.id - b.id);
-        const success = sorted.filter((r) => r.ok === 1).length;
-        const total = sorted.length;
-        const last = sorted[sorted.length - 1];
+        let success = 0;
+        let previousOk: number | undefined;
+        let lastChangedAt: string | null = null;
+        for (const record of arr) {
+          if (record.ok === 1) success += 1;
+          if (record.ok !== previousOk) lastChangedAt = record.probed_at;
+          previousOk = record.ok;
+        }
+        const total = arr.length;
+        const last = arr[total - 1];
         out.push({
           targetName: target,
           url: last?.url ?? null,
@@ -73,7 +79,7 @@ function makeMemoryStore(): UptimeStore {
           availabilityPct: total === 0 ? 0 : Math.round((success / total) * 1000) / 10,
           totalProbes: total,
           successProbes: success,
-          lastChangedAt: sorted[0]?.probed_at ?? null,
+          lastChangedAt,
         });
       }
       return out.slice(0, limit);
@@ -99,11 +105,19 @@ function makeSqliteStore(dbPath: string): UptimeStore {
   );
   const ins = db.prepare("INSERT INTO probes(target, url, ok, detail, probed_at) VALUES (?, ?, ?, ?, ?)");
   const agg = db.prepare(
-    `SELECT target, SUM(ok) success, COUNT(*) total,
-       (SELECT url FROM probes p2 WHERE p2.target = probes.target ORDER BY id DESC LIMIT 1) url,
-       (SELECT ok FROM probes p2 WHERE p2.target = probes.target ORDER BY id DESC LIMIT 1) last_ok,
-       (SELECT probed_at FROM probes p2 WHERE p2.target = probes.target ORDER BY id ASC LIMIT 1) first_at
-     FROM probes GROUP BY target`
+    `WITH history AS (
+       SELECT id, target, ok, LAG(ok) OVER (PARTITION BY target ORDER BY id) AS previous_ok
+       FROM probes
+     ), aggregates AS (
+       SELECT target, SUM(ok) AS success, COUNT(*) AS total, MAX(id) AS latest,
+         MAX(CASE WHEN ok IS NOT previous_ok THEN id END) AS last_change
+       FROM history GROUP BY target
+     )
+     SELECT aggregates.target, success, total, latest.url, latest.ok AS last_ok, changed.probed_at AS last_changed_at
+     FROM aggregates
+     JOIN probes AS latest ON latest.id = aggregates.latest
+     JOIN probes AS changed ON changed.id = aggregates.last_change
+     ORDER BY aggregates.target`
   );
   return {
     insertProbe(r) {
@@ -124,7 +138,7 @@ function makeSqliteStore(dbPath: string): UptimeStore {
           availabilityPct: total === 0 ? 0 : Math.round((success / total) * 1000) / 10,
           totalProbes: total,
           successProbes: success,
-          lastChangedAt: row["first_at"] === null || row["first_at"] === undefined ? null : String(row["first_at"]),
+          lastChangedAt: row["last_changed_at"] === null || row["last_changed_at"] === undefined ? null : String(row["last_changed_at"]),
         };
       });
       return out.slice(0, limit);

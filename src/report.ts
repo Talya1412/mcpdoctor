@@ -91,7 +91,12 @@ export function renderTable(report: AuditReport): string {
 }
 
 export function renderJson(report: AuditReport): string {
-  return JSON.stringify(report, null, 2);
+  const entries = report.scanners.entries.map(({ name, transport, sourceFile }) => ({
+    name,
+    transport,
+    sourceFile,
+  }));
+  return JSON.stringify({ ...report, scanners: { entries } }, null, 2);
 }
 
 export function renderBomTable(bom: BomReport): string {

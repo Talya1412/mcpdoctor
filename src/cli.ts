@@ -2,6 +2,7 @@
 // mcpdoctor — CLI entrypoint.
 
 import { Command } from "commander";
+import { createRequire } from "node:module";
 import { runAudit } from "./audit.js";
 import { buildBom } from "./bom.js";
 import { gatherEntries, isAuditableRef, parseMcpConfig, resolvePackageRef } from "./config.js";
@@ -12,11 +13,12 @@ import { renderBomJson, renderBomMarkdown, renderBomTable, renderReport } from "
 import type { McpServerEntry, ReportFormat } from "./types.js";
 
 const program = new Command();
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 program
   .name("mcpdoctor")
   .description("npm audit for your MCP server stack")
-  .version("0.1.0", "-v, --version", "output the version number");
+  .version(version, "-v, --version", "output the version number");
 
 function normalizeFormat(f: string): ReportFormat {
   if (f === "json") return "json";
@@ -95,9 +97,10 @@ program
   .option("--db <path>", "sqlite db path", "mcpdoctor.db")
   .option("-c, --config <path>", "explicit config file override")
   .option("--refresh", "rescan config each tick")
-  .action((opts: { once?: boolean; interval: string; db: string; config?: string }) => {
+  .action((opts: { once?: boolean; interval: string; db: string; config?: string; refresh?: boolean }) => {
     const intervalMs = Number(opts.interval) || 60000;
-    void runMonitor(loadEntries(opts.config), {
+    const load = () => loadEntries(opts.config);
+    return runMonitor(opts.refresh ? load : load(), {
       intervalMs,
       once: opts.once,
       dbPath: opts.db,

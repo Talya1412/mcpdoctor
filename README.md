@@ -52,7 +52,7 @@ npx mcpdoctor-audit
 npx mcpdoctor-audit -c .cursor/mcp.json -f markdown
 
 # Bill of materials — what versions are you actually running?
-npx mcpdoctor-audit bom --json
+npx mcpdoctor-audit bom --format json
 
 # Pin your versions to a lockfile
 npx mcpdoctor-audit lockfix --write
@@ -107,7 +107,7 @@ remote-api     | UNREACHABLE   | -            | HTTP 502
 | `STALE` | Last publish ≥ 90 days ago |
 | `ZOMBIE` | Last publish ≥ 365 days ago |
 | `INSECURE` | Known vulnerability in resolved version, or unpublished package |
-| `MISSING` | Package no longer exists on npm (or unpublished) |
+| `MISSING` | No matching package release on npm |
 | `UNREACHABLE` | Remote/HTTP server failed a live health probe |
 
 Verdict severity order: `INSECURE > MISSING > ZOMBIE > STALE > UNREACHABLE > OK`.
@@ -127,6 +127,8 @@ Supported runtimes: `npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx`, `uv`, `pipx`, 
 ## Privacy
 
 Everything runs locally. Metadata and CVE lookups hit the public npm registry and OSV (open-source vulnerability DB) over HTTPS — no telemetry, no account, no data leaves for analytics. Uptime history is a local SQLite file.
+
+JSON audit reports include the names, transport types and config file paths of scanned servers.
 
 ## Roadmap
 
