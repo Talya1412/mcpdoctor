@@ -55,6 +55,8 @@ export interface VersionMeta {
   publishedAt: string | null;
   /** npm dist-tag "latest" value at query time */
   isLatest: boolean;
+  /** this release is marked deprecated by npm */
+  deprecated?: boolean;
 }
 
 export interface RegistryMeta {
@@ -63,6 +65,8 @@ export interface RegistryMeta {
   latestPublishAt: string | null;
   /** latest version per dist-tags.latest */
   latestVersion: string | null;
+  /** npm dist-tags other than latest may select a different release channel */
+  distTags?: Readonly<Record<string, string>>;
   /** all versions with metadata (may be truncated) */
   versions: VersionMeta[];
   /** npm downloads for last month (from downloads API) or null */

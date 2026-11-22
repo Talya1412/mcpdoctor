@@ -1,5 +1,6 @@
 // mcpdoctor — pure staleness/verdict logic.
 
+import semver from "semver";
 import type {
   AuditVerdict,
   HealthResult,
@@ -103,16 +104,16 @@ export function composeVerdict(inputs: ComposeInputs): AuditVerdict {
     });
   }
   // Phantom pin: user pinned an exact version that was never published.
-  if (
-    inputs.registry &&
-    inputs.requestedRange &&
-    /^v?\d+\.\d+\.\d+/.test(inputs.requestedRange) &&
-    !inputs.registry.versions.some((v) => v.version === inputs.requestedRange)
-  ) {
+  const exactRequested = semver.valid(inputs.requestedRange?.trim() ?? "");
+  const unresolved = inputs.registry !== null && inputs.requestedRange !== undefined && inputs.resolvedVersion === null;
+  if (inputs.registry && exactRequested !== null &&
+      !inputs.registry.versions.some((v) => semver.valid(v.version) === exactRequested)) {
     problems.push({
       severity: "high",
       message: `pinned version ${inputs.requestedRange} was never published (resolved to ${inputs.resolvedVersion ?? "latest"})`,
     });
+  } else if (unresolved) {
+    problems.push({ severity: "medium", message: `no published version matches ${inputs.requestedRange}` });
   }
   if (inputs.health.reachable === false) {
     problems.push({ severity: "info", message: `unreachable: ${inputs.health.detail}` });
@@ -122,7 +123,7 @@ export function composeVerdict(inputs: ComposeInputs): AuditVerdict {
   const sevOf = (p: Problem): number => (p.severity === "critical" ? 0 : 1);
   if (hasCritical) verdict = "insecure";
   else if (problems.some((p) => p.severity === "high")) verdict = "insecure";
-  else if (inputs.staleness.verdict === "missing") verdict = "missing";
+  else if (unresolved || inputs.staleness.verdict === "missing") verdict = "missing";
   else if (inputs.staleness.verdict === "zombie") verdict = "zombie";
   else if (inputs.staleness.verdict === "stale") verdict = "stale";
   else if (inputs.health.reachable === false) verdict = "unreachable";

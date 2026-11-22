@@ -146,4 +146,18 @@ describe("composeVerdict", () => {
     expect(v.verdict).toBe("insecure");
     expect(v.problems.some((p) => p.message.includes("9.9.9"))).toBe(true);
   });
+
+  it("reports an unresolved npm range rather than calling it healthy", () => {
+    const verdict = composeVerdict({
+      name: "pkg",
+      registry: meta(0),
+      staleness: { verdict: "ok", reason: "last publish 0 days ago", daysSincePublish: 0 },
+      vulns: null,
+      health: HEALTH_OK,
+      resolvedVersion: null,
+      requestedRange: "^3.0.0",
+    });
+    expect(verdict.verdict).toBe("missing");
+    expect(verdict.reason).toContain("^3.0.0");
+  });
 });

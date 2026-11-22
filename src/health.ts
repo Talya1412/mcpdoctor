@@ -18,13 +18,16 @@ export async function probeHealth(entry: McpServerEntry): Promise<HealthResult> 
         redirect: "follow",
         signal: controller.signal,
       });
-      if ((res.status === 405 || res.status === 501) && res.headers.get("allow") === null) {
+      if (res.status === 405 || res.status === 501) {
+        await res.body?.cancel().catch(() => undefined);
         res = await fetch(entry.url, {
           method: "GET",
+          headers: { Accept: "text/event-stream" },
           redirect: "follow",
           signal: controller.signal,
         });
       }
+      await res.body?.cancel().catch(() => undefined);
       return { reachable: res.ok, detail: `HTTP ${res.status}` };
     } catch (err) {
       const name = err instanceof Error ? err.name : "UnknownError";

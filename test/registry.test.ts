@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { getResolvedVersion, satisfies } from "../src/registry.js";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { buildMeta, fetchRegistryMeta, getResolvedVersion, satisfies } from "../src/registry.js";
+
+afterEach(() => vi.unstubAllGlobals());
 
 type Meta = { versions: { version: string }[]; latestVersion: string | null };
 
@@ -37,6 +39,16 @@ describe("satisfies", () => {
     expect(satisfies("1.9.0", ">=2.0.0")).toBe(false);
     expect(satisfies("1.5.0", ">=1.0.0 <2.0.0")).toBe(true);
     expect(satisfies("2.0.0", ">=1.0.0 <2.0.0")).toBe(false);
+  });
+
+  it("enforces partial comparator bounds", () => {
+    expect(satisfies("1.5.0", ">=1 <2")).toBe(true);
+    expect(satisfies("2.0.0", ">=1 <2")).toBe(false);
+  });
+
+  it("excludes pre-releases from stable npm ranges", () => {
+    expect(satisfies("1.5.0-beta.1", "^1.0.0")).toBe(false);
+    expect(satisfies("1.5.0-beta.2", ">=1.5.0-beta.1 <2")).toBe(true);
   });
 
   it("lower bound required", () => {
@@ -105,4 +117,39 @@ describe("getResolvedVersion", () => {
   it("returns null when no versions", () => {
     expect(getResolvedVersion(meta([], null), "^1.0.0")).toBeNull();
   });
+
+  it("keeps unresolved ranges separate from the latest release", () => {
+    const m = meta(["1.0.0", "1.5.0", "2.0.0"], "2.0.0");
+    expect(getResolvedVersion(m, ">=1 <2")).toBe("1.5.0");
+    expect(getResolvedVersion(m, "^3.0.0")).toBeNull();
+  });
+
+  it("resolves explicit npm distribution tags", () => {
+    const m = buildMeta("package", {
+      name: "package",
+      versions: { "1.0.0": {}, "2.0.0-beta.1": {} },
+      "dist-tags": { latest: "1.0.0", beta: "2.0.0-beta.1" },
+    });
+    expect(m).not.toBeNull();
+    expect(getResolvedVersion(m!, "latest")).toBe("1.0.0");
+    expect(getResolvedVersion(m!, "beta")).toBe("2.0.0-beta.1");
+    expect(getResolvedVersion(m!, "unknown-tag")).toBeNull();
+  });
+});
+
+it("reports deprecation for the selected npm release", async () => {
+  const name = "fixture-deprecation";
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    const body = url.startsWith("https://api.npmjs.org") ? { downloads: 10 } : {
+      name,
+      "dist-tags": { latest: "2.0.0" },
+      versions: { "1.0.0": { deprecated: "use 2.x" }, "2.0.0": {} },
+    };
+    return new Response(JSON.stringify(body));
+  }));
+
+  const lookup = (range: string) => fetchRegistryMeta({ name, range, spec: `${name}@${range}`, key: `${name}@${range}`, runtime: "npx" });
+
+  expect((await lookup("1.0.0"))?.deprecated).toBe(true);
+  expect((await lookup("2.0.0"))?.deprecated).toBe(false);
 });
